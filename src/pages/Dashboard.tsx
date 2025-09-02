@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import type { AppDispatch, RootState } from '../redux/store';
 import { logout, getCurrentUser } from '../redux/authSlice';
 import { getNotes, createNote, deleteNote, clearError } from '../redux/noteSlice';
-import Trash from '../assets/delete.svg';
-import HD from "../assets/HD.svg";
+import Trash from '../../public/delete.svg'
+import HD from "../../public/HD.svg"
 import Input from '../components/Input';
 import Button from '../components/Button';
 

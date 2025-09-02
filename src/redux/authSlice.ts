@@ -35,8 +35,13 @@ interface LoginData {
 
 interface SendOTPData {
   email: string;
-  name?: string;
+
 }
+interface SendSignupOTPData {
+  email: string;
+  name: string;   // required now
+}
+
 
 interface GoogleAuthData {
   idToken: string;
@@ -55,7 +60,7 @@ const initialState: AuthState = {
 // Send OTP for signup
 export const sendSignupOTP = createAsyncThunk(
   'auth/sendSignupOTP',
-  async (data: SendOTPData, { rejectWithValue }) => {
+  async (data: SendSignupOTPData, { rejectWithValue }) => {
     try {
       const response = await authAPI.sendSignupOTP(data);
       return response.data;

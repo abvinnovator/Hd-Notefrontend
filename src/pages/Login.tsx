@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import type { AppDispatch, RootState } from '../redux/store';
-import { sendLoginOTP, login, clearError, clearOTPState } from '../redux/authSlice';
+import { sendLoginOTP, login, clearError, clearOTPState, googleAuth } from '../redux/authSlice';
 import Input from '../components/Input';
 import Button from '../components/Button';
-import HDIcon from '../assets/HD.svg';
-import RightImage from '../assets/Signup.svg';
+import HDIcon from "../../public/HD.svg"
+import RightImage from '../../public/Signup.svg'
 import { Link } from 'react-router-dom';
 
 const Login: React.FC = () => {
@@ -34,7 +34,70 @@ const Login: React.FC = () => {
       document.body.style.overflow = prev;
     };
   }, []);
+const [/*googleLoading*/, setGoogleLoading] = useState(false);
+const googleButtonRef = useRef<HTMLDivElement>(null);
 
+// Add the same Google OAuth useEffect and handlers from SignUp.tsx
+useEffect(() => {
+  if (window.google?.accounts?.id) return;
+
+  const script = document.createElement('script');
+  script.src = 'https://accounts.google.com/gsi/client';
+  script.async = true;
+  script.defer = true;
+  script.onload = () => {
+    window.google.accounts.id.initialize({
+      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      callback: handleGoogleResponse,
+      use_fedcm_for_prompt: false,
+      use_fedcm_for_button: false,
+    });
+
+    if (googleButtonRef.current) {
+      window.google.accounts.id.renderButton(
+        googleButtonRef.current,
+        {
+          theme: 'outline',
+          size: 'large',
+          width: '100%',
+          shape: 'rectangular',
+          text: 'signin_with',
+          logo_alignment: 'left',
+        }
+      );
+    }
+  };
+  document.head.appendChild(script);
+
+  return () => {
+    document.head.removeChild(script);
+  };
+}, []);
+
+const handleGoogleSignIn = () => {
+  if (!window.google?.accounts?.id) {
+    console.error('Google SDK not loaded');
+    return;
+  }
+  setGoogleLoading(true);
+  window.google.accounts.id.prompt((notification: any) => {
+    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+      setGoogleLoading(false);
+      console.log('Google popup was not displayed or skipped');
+    }
+  });
+  setTimeout(() => setGoogleLoading(false), 1200);
+};
+
+const handleGoogleResponse = async (response: any) => {
+  try {
+    setGoogleLoading(false);
+    await dispatch(googleAuth({ idToken: response.credential })).unwrap();
+  } catch (error) {
+    setGoogleLoading(false);
+    console.error('Google authentication failed:', error);
+  }
+};
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
@@ -87,21 +150,27 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleGetOTP = async () => {
-    const emailError = validateEmail();
-    setFormErrors(prev => ({ ...prev, email: emailError }));
+const handleGetOTP = async () => {
+  const emailError = validateEmail();
+  setFormErrors(prev => ({ ...prev, email: emailError }));
 
-    if (emailError) {
-      return;
-    }
+  if (emailError) {
+    return;
+  }
 
-    try {
-      await dispatch(sendLoginOTP({ email: formData.email })).unwrap();
-    } catch (error) {
-      // Error is handled by Redux state
-      console.error('Failed to send OTP:', error);
+  try {
+    await dispatch(sendLoginOTP({ email: formData.email })).unwrap();
+  } catch (error: any) {
+    // Check if it's a Google user
+    if (error.message?.includes('Google sign-in')) {
+      setFormErrors(prev => ({ 
+        ...prev, 
+        email: 'This account uses Google sign-in. Please use the Google button above.' 
+      }));
     }
-  };
+    console.error('Failed to send OTP:', error);
+  }
+};
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,7 +228,24 @@ const Login: React.FC = () => {
                 <p className="text-sm text-red-600">{error}</p>
               </div>
             )}
-
+<div className="mb-6">
+    <div
+      ref={googleButtonRef}
+      id="google-signin-button"
+      onClick={handleGoogleSignIn}
+      className="mt-3 cursor-pointer"
+    />
+  </div>
+  
+  {/* Divider */}
+  <div className="relative mb-6">
+    <div className="absolute inset-0 flex items-center">
+      <div className="w-full border-t border-gray-300" />
+    </div>
+    <div className="relative flex justify-center text-sm">
+      <span className="px-2 bg-white text-gray-500">Or continue with email</span>
+    </div>
+  </div>
             <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
               <Input
                 label="Email"

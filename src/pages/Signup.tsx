@@ -5,8 +5,8 @@ import type { AppDispatch, RootState } from '../redux/store';
 import { sendSignupOTP, signUp, googleAuth, clearError, clearOTPState } from '../redux/authSlice';
 import Input from '../components/Input';
 import Button from '../components/Button';
-import HDIcon from '../assets/HD.svg';
-import RightImage from '../assets/Signup.svg';
+import HDIcon from '../../public/HD.svg'
+import RightImage from '../../public/Signup.svg'
 import { Link } from 'react-router-dom';
 
 declare global {
@@ -33,7 +33,7 @@ const SignUp: React.FC = () => {
     email: '',
     otp: ''
   });
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const [/*googleLoading*/, setGoogleLoading] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
