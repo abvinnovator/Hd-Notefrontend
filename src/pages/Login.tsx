@@ -65,7 +65,6 @@ const Login: React.FC = () => {
 
     console.log('🔍 Loading Google Sign-In script...');
     console.log('Current origin:', window.location.origin);
-    console.log('Google Client ID:', import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
