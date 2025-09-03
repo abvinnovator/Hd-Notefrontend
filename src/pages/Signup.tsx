@@ -33,8 +33,9 @@ const SignUp: React.FC = () => {
     email: '',
     otp: ''
   });
-  const [/*googleLoading*/, setGoogleLoading] = useState(false);
+
   const googleButtonRef = useRef<HTMLDivElement>(null);
+  const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -44,25 +45,78 @@ const SignUp: React.FC = () => {
     };
   }, []);
 
-  // Load Google OAuth script
+  // Load Google OAuth script - IMPROVED VERSION
   useEffect(() => {
-    if (window.google?.accounts?.id) return; // already loaded
+    // Check if script is already loaded
+    if (window.google?.accounts?.id) {
+      setGoogleScriptLoaded(true);
+      initializeGoogleSignIn();
+      return;
+    }
+
+    // Check if script is already in DOM
+    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', () => {
+        setGoogleScriptLoaded(true);
+        initializeGoogleSignIn();
+      });
+      return;
+    }
+
+    console.log('🔍 Loading Google Sign-In script...');
+    console.log('Current origin:', window.location.origin);
+   
 
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
     script.defer = true;
+    
     script.onload = () => {
+      console.log('✅ Google Script loaded successfully');
+      setGoogleScriptLoaded(true);
+      initializeGoogleSignIn();
+    };
+    
+    script.onerror = (error) => {
+      console.error('❌ Failed to load Google Sign-In script:', error);
+    };
+    
+    document.head.appendChild(script);
+
+    return () => {
+      // Cleanup: remove script if component unmounts
+      const scriptToRemove = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (scriptToRemove && document.head.contains(scriptToRemove)) {
+        document.head.removeChild(scriptToRemove);
+      }
+    };
+  }, []);
+
+  // Initialize Google Sign-In - SEPARATE FUNCTION
+  const initializeGoogleSignIn = () => {
+    if (!window.google?.accounts?.id) {
+      console.error('❌ Google Sign-In library not available');
+      return;
+    }
+
+    try {
+      console.log('🔧 Initializing Google Sign-In...');
+      
       window.google.accounts.id.initialize({
         client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
         callback: handleGoogleResponse,
-        // Disable FedCM for now to ensure popup works on desktop
+        auto_select: false,
+        cancel_on_tap_outside: true,
         use_fedcm_for_prompt: false,
-        use_fedcm_for_button: false,
+        ux_mode: 'popup', // Explicitly set to popup mode
+        context: 'signup', // Set context to signup
       });
 
-      // Render the button after initialization
+      // Render the button
       if (googleButtonRef.current) {
+        console.log('🎨 Rendering Google Sign-In button...');
         window.google.accounts.id.renderButton(
           googleButtonRef.current,
           {
@@ -70,19 +124,38 @@ const SignUp: React.FC = () => {
             size: 'large',
             width: '100%',
             shape: 'rectangular',
-            text: 'continue_with',
+            text: 'signup_with', // Changed to signup_with for signup page
             logo_alignment: 'left',
+            locale: 'en',
           }
         );
       }
-    };
-    document.head.appendChild(script);
 
-    return () => {
-      // Cleanup: remove the script if needed
-      document.head.removeChild(script);
-    };
-  }, []);
+      console.log('✅ Google Sign-In initialized successfully');
+    } catch (error) {
+      console.error('❌ Error initializing Google Sign-In:', error);
+    }
+  };
+
+  // Google response handler - IMPROVED VERSION
+  const handleGoogleResponse = async (response: any) => {
+    console.log('🔄 Google response received:', { hasCredential: !!response.credential });
+    
+    try {
+      if (!response.credential) {
+        console.error('❌ No credential received from Google');
+        return;
+      }
+
+      console.log('📤 Sending credential to backend...');
+      await dispatch(googleAuth({ idToken: response.credential })).unwrap();
+      console.log('✅ Google authentication successful');
+      
+    } catch (error) {
+      console.error('❌ Google authentication failed:', error);
+      // You might want to show a user-friendly error message here
+    }
+  };
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -195,33 +268,6 @@ const SignUp: React.FC = () => {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    if (!window.google?.accounts?.id) {
-      console.error('Google SDK not loaded');
-      return;
-    }
-    setGoogleLoading(true);
-    // Trigger the popup on user click
-    window.google.accounts.id.prompt((notification: any) => {
-      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        setGoogleLoading(false);
-        console.log('Google popup was not displayed or skipped');
-      }
-    });
-    // Stop the spinner after a short delay
-    setTimeout(() => setGoogleLoading(false), 1200);
-  };
-
-  const handleGoogleResponse = async (response: any) => {
-    try {
-      setGoogleLoading(false);
-      await dispatch(googleAuth({ idToken: response.credential })).unwrap();
-    } catch (error) {
-      setGoogleLoading(false);
-      console.error('Google authentication failed:', error);
-    }
-  };
-
   return (
     <div className="h-screen w-full overflow-hidden bg-white">
       <div className="relative flex h-full">
@@ -240,22 +286,30 @@ const SignUp: React.FC = () => {
                 Sign up to enjoy the features of HD
               </p>
             </div>
+            
             {/* Display error message */}
             {error && (
               <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
                 <p className="text-sm text-red-600">{error}</p>
               </div>
             )}
+            
             <div className="mt-8">
               {/* Google Sign Up Button */}
               <div className="mb-6">
+                {!googleScriptLoaded && (
+                  <div className="flex items-center justify-center py-3 px-4 border border-gray-300 rounded-md">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                    <span className="text-sm text-gray-600">Loading Google Sign-In...</span>
+                  </div>
+                )}
                 <div
                   ref={googleButtonRef}
                   id="google-signin-button"
-                  onClick={handleGoogleSignIn}
-                  className="mt-3 cursor-pointer"
+                  className={`mt-3 ${!googleScriptLoaded ? 'hidden' : ''}`}
                 />
               </div>
+              
               {/* Divider */}
               <div className="relative mb-6">
                 <div className="absolute inset-0 flex items-center">
@@ -265,6 +319,7 @@ const SignUp: React.FC = () => {
                   <span className="px-2 bg-white text-gray-500">Or continue with email</span>
                 </div>
               </div>
+              
               {/* Email Form */}
               <form className="space-y-6" onSubmit={handleSubmit}>
                 <Input

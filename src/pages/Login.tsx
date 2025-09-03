@@ -9,6 +9,12 @@ import HDIcon from "../../public/HD.svg"
 import RightImage from '../../public/Signup.svg'
 import { Link } from 'react-router-dom';
 
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+
 const Login: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
@@ -27,6 +33,9 @@ const Login: React.FC = () => {
     otp: ''
   });
 
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+  const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
+
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -34,70 +43,119 @@ const Login: React.FC = () => {
       document.body.style.overflow = prev;
     };
   }, []);
-const [/*googleLoading*/, setGoogleLoading] = useState(false);
-const googleButtonRef = useRef<HTMLDivElement>(null);
 
-// Add the same Google OAuth useEffect and handlers from SignUp.tsx
-useEffect(() => {
-  if (window.google?.accounts?.id) return;
+  // Load Google OAuth script - IMPROVED VERSION
+  useEffect(() => {
+    // Check if script is already loaded
+    if (window.google?.accounts?.id) {
+      setGoogleScriptLoaded(true);
+      initializeGoogleSignIn();
+      return;
+    }
 
-  const script = document.createElement('script');
-  script.src = 'https://accounts.google.com/gsi/client';
-  script.async = true;
-  script.defer = true;
-  script.onload = () => {
-    window.google.accounts.id.initialize({
-      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      callback: handleGoogleResponse,
-      use_fedcm_for_prompt: false,
-      use_fedcm_for_button: false,
-    });
+    // Check if script is already in DOM
+    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', () => {
+        setGoogleScriptLoaded(true);
+        initializeGoogleSignIn();
+      });
+      return;
+    }
 
-    if (googleButtonRef.current) {
-      window.google.accounts.id.renderButton(
-        googleButtonRef.current,
-        {
-          theme: 'outline',
-          size: 'large',
-          width: '100%',
-          shape: 'rectangular',
-          text: 'signin_with',
-          logo_alignment: 'left',
-        }
-      );
+    console.log('🔍 Loading Google Sign-In script...');
+    console.log('Current origin:', window.location.origin);
+    console.log('Google Client ID:', import.meta.env.VITE_GOOGLE_CLIENT_ID);
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    
+    script.onload = () => {
+      console.log('✅ Google Script loaded successfully');
+      setGoogleScriptLoaded(true);
+      initializeGoogleSignIn();
+    };
+    
+    script.onerror = (error) => {
+      console.error('❌ Failed to load Google Sign-In script:', error);
+    };
+    
+    document.head.appendChild(script);
+
+    return () => {
+      // Cleanup: remove script if component unmounts
+      const scriptToRemove = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (scriptToRemove && document.head.contains(scriptToRemove)) {
+        document.head.removeChild(scriptToRemove);
+      }
+    };
+  }, []);
+
+  // Initialize Google Sign-In - SEPARATE FUNCTION
+  const initializeGoogleSignIn = () => {
+    if (!window.google?.accounts?.id) {
+      console.error('❌ Google Sign-In library not available');
+      return;
+    }
+
+    try {
+      console.log('🔧 Initializing Google Sign-In...');
+      
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        callback: handleGoogleResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+        use_fedcm_for_prompt: false,
+        ux_mode: 'popup', // Explicitly set to popup mode
+        context: 'signin', // Set context to signin for login page
+      });
+
+      // Render the button
+      if (googleButtonRef.current) {
+        console.log('🎨 Rendering Google Sign-In button...');
+        window.google.accounts.id.renderButton(
+          googleButtonRef.current,
+          {
+            theme: 'outline',
+            size: 'large',
+            width: '100%',
+            shape: 'rectangular',
+            text: 'signin_with', // Changed to signin_with for login page
+            logo_alignment: 'left',
+            locale: 'en',
+          }
+        );
+      }
+
+      console.log('✅ Google Sign-In initialized successfully');
+    } catch (error) {
+      console.error('❌ Error initializing Google Sign-In:', error);
     }
   };
-  document.head.appendChild(script);
 
-  return () => {
-    document.head.removeChild(script);
-  };
-}, []);
+  // Google response handler - IMPROVED VERSION
+  const handleGoogleResponse = async (response: any) => {
+    console.log('🔄 Google response received:', { hasCredential: !!response.credential });
+    
+    try {
+      if (!response.credential) {
+        console.error('❌ No credential received from Google');
+        return;
+      }
 
-const handleGoogleSignIn = () => {
-  if (!window.google?.accounts?.id) {
-    console.error('Google SDK not loaded');
-    return;
-  }
-  setGoogleLoading(true);
-  window.google.accounts.id.prompt((notification: any) => {
-    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-      setGoogleLoading(false);
-      console.log('Google popup was not displayed or skipped');
+      console.log('📤 Sending credential to backend...');
+      await dispatch(googleAuth({ idToken: response.credential })).unwrap();
+      console.log('✅ Google authentication successful');
+      
+    } catch (error) {
+      console.error('❌ Google authentication failed:', error);
+      // You might want to show a user-friendly error message here
     }
-  });
-  setTimeout(() => setGoogleLoading(false), 1200);
-};
+  };
 
-const handleGoogleResponse = async (response: any) => {
-  try {
-    setGoogleLoading(false);
-    await dispatch(googleAuth({ idToken: response.credential })).unwrap();
-  } catch (error) {
-    setGoogleLoading(false);
-    console.error('Google authentication failed:', error);
-  }
-};
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
@@ -150,27 +208,27 @@ const handleGoogleResponse = async (response: any) => {
     }
   };
 
-const handleGetOTP = async () => {
-  const emailError = validateEmail();
-  setFormErrors(prev => ({ ...prev, email: emailError }));
+  const handleGetOTP = async () => {
+    const emailError = validateEmail();
+    setFormErrors(prev => ({ ...prev, email: emailError }));
 
-  if (emailError) {
-    return;
-  }
-
-  try {
-    await dispatch(sendLoginOTP({ email: formData.email })).unwrap();
-  } catch (error: any) {
-    // Check if it's a Google user
-    if (error.message?.includes('Google sign-in')) {
-      setFormErrors(prev => ({ 
-        ...prev, 
-        email: 'This account uses Google sign-in. Please use the Google button above.' 
-      }));
+    if (emailError) {
+      return;
     }
-    console.error('Failed to send OTP:', error);
-  }
-};
+
+    try {
+      await dispatch(sendLoginOTP({ email: formData.email })).unwrap();
+    } catch (error: any) {
+      // Check if it's a Google user
+      if (error.message?.includes('Google sign-in')) {
+        setFormErrors(prev => ({ 
+          ...prev, 
+          email: 'This account uses Google sign-in. Please use the Google button above.' 
+        }));
+      }
+      console.error('Failed to send OTP:', error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -228,115 +286,126 @@ const handleGetOTP = async () => {
                 <p className="text-sm text-red-600">{error}</p>
               </div>
             )}
-<div className="mb-6">
-    <div
-      ref={googleButtonRef}
-      id="google-signin-button"
-      onClick={handleGoogleSignIn}
-      className="mt-3 cursor-pointer"
-    />
-  </div>
-  
-  {/* Divider */}
-  <div className="relative mb-6">
-    <div className="absolute inset-0 flex items-center">
-      <div className="w-full border-t border-gray-300" />
-    </div>
-    <div className="relative flex justify-center text-sm">
-      <span className="px-2 bg-white text-gray-500">Or continue with email</span>
-    </div>
-  </div>
-            <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-              <Input
-                label="Email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleChange}
-                error={formErrors.email}
-                placeholder="Enter your email address"
-                disabled={otpSent}
-                required
-              />
 
-              {otpSent && (
+            <div className="mt-8">
+              {/* Google Sign In Button */}
+              <div className="mb-6">
+                {!googleScriptLoaded && (
+                  <div className="flex items-center justify-center py-3 px-4 border border-gray-300 rounded-md">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                    <span className="text-sm text-gray-600">Loading Google Sign-In...</span>
+                  </div>
+                )}
+                <div
+                  ref={googleButtonRef}
+                  id="google-signin-button"
+                  className={`mt-3 ${!googleScriptLoaded ? 'hidden' : ''}`}
+                />
+              </div>
+              
+              {/* Divider */}
+              <div className="relative mb-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">Or continue with email</span>
+                </div>
+              </div>
+              
+              {/* Email Form */}
+              <form className="space-y-6" onSubmit={handleSubmit}>
                 <Input
-                  label="OTP"
-                  name="otp"
-                  type="text"
-                  value={formData.otp}
+                  label="Email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
                   onChange={handleChange}
-                  error={formErrors.otp}
-                  placeholder="Enter 6-digit OTP"
-                  maxLength={6}
+                  error={formErrors.email}
+                  placeholder="Enter your email address"
+                  disabled={otpSent}
                   required
                 />
-              )}
 
-              {otpSent && (
-                <div className="flex items-center justify-between text-sm">
+                {otpSent && (
+                  <Input
+                    label="OTP"
+                    name="otp"
+                    type="text"
+                    value={formData.otp}
+                    onChange={handleChange}
+                    error={formErrors.otp}
+                    placeholder="Enter 6-digit OTP"
+                    maxLength={6}
+                    required
+                  />
+                )}
+
+                {otpSent && (
+                  <div className="flex items-center justify-between text-sm">
+                    <button
+                      type="button"
+                      onClick={handleResendOTP}
+                      disabled={otpLoading}
+                      className="text-blue-600 hover:text-blue-500 disabled:text-gray-400"
+                    >
+                      {otpLoading ? 'Sending...' : 'Resend OTP'}
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center">
+                  <input
+                    id="rememberMe"
+                    name="rememberMe"
+                    type="checkbox"
+                    checked={formData.rememberMe}
+                    onChange={handleChange}
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700">
+                    Keep me logged in
+                  </label>
+                </div>
+
+                <Button
+                  type={otpSent ? 'submit' : 'button'}
+                  onClick={otpSent ? undefined : handleGetOTP}
+                  className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={
+                    otpSent 
+                      ? loading || !formData.otp.trim()
+                      : otpLoading || !formData.email.trim()
+                  }
+                >
+                  {otpSent 
+                    ? (loading ? 'Signing In...' : 'Sign in')
+                    : (otpLoading ? 'Sending OTP...' : 'Get OTP')
+                  }
+                </Button>
+
+                {otpSent && (
                   <button
                     type="button"
-                    onClick={handleResendOTP}
-                    disabled={otpLoading}
-                    className="text-blue-600 hover:text-blue-500 disabled:text-gray-400"
+                    onClick={() => {
+                      dispatch(clearOTPState());
+                      setFormData(prev => ({ ...prev, otp: '' }));
+                      setFormErrors(prev => ({ ...prev, otp: '' }));
+                    }}
+                    className="w-full text-sm text-blue-600 hover:text-blue-500 underline"
                   >
-                    {otpLoading ? 'Sending...' : 'Resend OTP'}
+                    Change email
                   </button>
-                </div>
-              )}
+                )}
 
-              <div className="flex items-center">
-                <input
-                  id="rememberMe"
-                  name="rememberMe"
-                  type="checkbox"
-                  checked={formData.rememberMe}
-                  onChange={handleChange}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700">
-                  Keep me logged in
-                </label>
-              </div>
-
-              <Button
-                type={otpSent ? 'submit' : 'button'}
-                onClick={otpSent ? undefined : handleGetOTP}
-                className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                disabled={
-                  otpSent 
-                    ? loading || !formData.otp.trim()
-                    : otpLoading || !formData.email.trim()
-                }
-              >
-                {otpSent 
-                  ? (loading ? 'Signing In...' : 'Sign in')
-                  : (otpLoading ? 'Sending OTP...' : 'Get OTP')
-                }
-              </Button>
-
-              {otpSent && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    dispatch(clearOTPState());
-                    setFormData(prev => ({ ...prev, otp: '' }));
-                    setFormErrors(prev => ({ ...prev, otp: '' }));
-                  }}
-                  className="w-full text-sm text-blue-600 hover:text-blue-500 underline"
-                >
-                  Change email
-                </button>
-              )}
-
-              <p className="text-center text-sm text-gray-600">
-                Need an account?{' '}
-                <Link to="/signup" className="font-medium text-blue-600 hover:text-blue-500">
-                  Create one
-                </Link>
-              </p>
-            </form>
+                <p className="text-center text-sm text-gray-600">
+                  Need an account?{' '}
+                  <Link to="/signup" className="font-medium text-blue-600 hover:text-blue-500">
+                    Create one
+                  </Link>
+                </p>
+              </form>
+            </div>
           </div>
         </div>
 
@@ -353,4 +422,4 @@ const handleGetOTP = async () => {
   );
 };
 
-export default Login;
+export default Login
